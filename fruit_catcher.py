@@ -453,6 +453,8 @@ class Game:
                     self._spawn_golden_apple()
                 self._handle_collisions()
                 self._update_level_time()
+            elif self.state == self.STATE_PAUSED:
+                self.combo.update()
 
             if self.state == self.STATE_MENU:
                 self._draw_menu()

@@ -25,14 +25,14 @@ class GoldenApple(pygame.sprite.Sprite):
 
     def _draw(self):
         cx, cy = self.radius, self.radius
-        pygame.draw.circle(self.image, GOLD, (cx, cy + 2), self.radius - 3)
-        pygame.draw.circle(self.image, BRIGHT_GOLD, (cx - 5, cy - 3), 6)
-        pygame.draw.circle(self.image, (255, 255, 220), (cx - 7, cy - 6), 3)
-        pygame.draw.rect(self.image, (180, 120, 20), (cx - 2, cy - self.radius, 4, 9))
-        pygame.draw.ellipse(self.image, (100, 180, 50), (cx + 3, cy - self.radius - 1, 11, 7))
+        pygame.draw.circle(self.image, GOLD, (cx, cy), self.radius - 3)
+        pygame.draw.circle(self.image, BRIGHT_GOLD, (cx - 5, cy - 5), 6)
+        pygame.draw.circle(self.image, (255, 255, 220), (cx - 7, cy - 8), 3)
+        pygame.draw.rect(self.image, (180, 120, 20), (cx - 2, cy - self.radius - 2, 4, 9))
+        pygame.draw.ellipse(self.image, (100, 180, 50), (cx + 3, cy - self.radius - 3, 11, 7))
         for i in range(3):
             sx = cx + int(6 * math.cos(i * 2.094))
-            sy = cy + 2 + int(6 * math.sin(i * 2.094))
+            sy = cy + int(6 * math.sin(i * 2.094))
             pygame.draw.circle(self.image, (255, 255, 255), (sx, sy), 1)
 
     def create_glow(self):
