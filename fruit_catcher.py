@@ -3,6 +3,9 @@ import random
 import json
 import os
 import sys
+import math
+
+from particles import Particle, GoldenGlow, StarBurst, GOLD, BRIGHT_GOLD
 
 pygame.init()
 pygame.mixer.init()
@@ -97,6 +100,8 @@ class FallingItem(pygame.sprite.Sprite):
         self.radius = props['radius']
         self.points = props['points']
         self.is_bomb = props['is_bomb']
+        self.is_golden = False
+        self.is_star = False
         self.image = pygame.Surface((self.radius * 2, self.radius * 2), pygame.SRCALPHA)
         self._draw_item()
         self.rect = self.image.get_rect()
@@ -151,24 +156,98 @@ class FallingItem(pygame.sprite.Sprite):
             self.kill()
 
 
-class Particle(pygame.sprite.Sprite):
-    def __init__(self, x, y, color):
+class GoldenApple(pygame.sprite.Sprite):
+    def __init__(self, level=1):
         super().__init__()
-        self.size = random.randint(3, 8)
-        self.image = pygame.Surface((self.size, self.size), pygame.SRCALPHA)
-        pygame.draw.circle(self.image, color, (self.size // 2, self.size // 2), self.size // 2)
+        self.radius = 22
+        self.item_type = 'golden_apple'
+        self.points = 50
+        self.is_bomb = False
+        self.is_golden = True
+        self.is_star = False
+        self.image = pygame.Surface((self.radius * 2, self.radius * 2), pygame.SRCALPHA)
+        self._draw()
         self.rect = self.image.get_rect()
-        self.rect.center = (x, y)
-        self.vx = random.randint(-5, 5)
-        self.vy = random.randint(-8, -2)
-        self.life = 30
+        self.rect.x = random.randint(30, SCREEN_WIDTH - 30 - self.radius * 2)
+        self.rect.y = -self.radius * 2
+        self.speed = 2.5 + level * 0.3
+        self.glow = None
+
+    def _draw(self):
+        cx, cy = self.radius, self.radius
+        pygame.draw.circle(self.image, GOLD, (cx, cy + 2), self.radius - 3)
+        pygame.draw.circle(self.image, BRIGHT_GOLD, (cx - 5, cy - 3), 6)
+        pygame.draw.circle(self.image, (255, 255, 220), (cx - 7, cy - 6), 3)
+        pygame.draw.rect(self.image, (180, 120, 20), (cx - 2, cy - self.radius, 4, 9))
+        pygame.draw.ellipse(self.image, (100, 180, 50), (cx + 3, cy - self.radius - 1, 11, 7))
+        for i in range(3):
+            sx = cx + int(6 * math.cos(i * 2.094))
+            sy = cy + 2 + int(6 * math.sin(i * 2.094))
+            pygame.draw.circle(self.image, (255, 255, 255), (sx, sy), 1)
+
+    def create_glow(self):
+        self.glow = GoldenGlow(self)
+        return self.glow
 
     def update(self):
-        self.rect.x += self.vx
+        self.rect.y += self.speed
+        if self.rect.top > SCREEN_HEIGHT:
+            if self.glow:
+                self.glow.kill()
+            self.kill()
+
+
+class Star(pygame.sprite.Sprite):
+    def __init__(self, x, y):
+        super().__init__()
+        self.item_type = 'star'
+        self.points = 30
+        self.is_bomb = False
+        self.is_golden = False
+        self.is_star = True
+        self.radius = 18
+        self.size = self.radius * 2
+        self.image = pygame.Surface((self.size, self.size), pygame.SRCALPHA)
+        self._draw_star()
+        self.rect = self.image.get_rect()
+        self.rect.centerx = x
+        self.rect.bottom = y
+        self.vy = -10
+        self.gravity = 0.2
+        self.wobble = 0
+        self.wobble_speed = random.choice([-0.08, 0.08])
+
+    def _draw_star(self):
+        cx, cy = self.radius, self.radius
+        points = []
+        for i in range(10):
+            angle = i * math.pi / 5 - math.pi / 2
+            r = self.radius - 4 if i % 2 == 0 else (self.radius - 4) * 0.45
+            px = cx + int(r * math.cos(angle))
+            py = cy + int(r * math.sin(angle))
+            points.append((px, py))
+        pygame.draw.polygon(self.image, BRIGHT_GOLD, points)
+        pygame.draw.polygon(self.image, GOLD, points, 2)
+        inner_points = []
+        for i in range(10):
+            angle = i * math.pi / 5 - math.pi / 2
+            r = (self.radius - 4) * 0.55 if i % 2 == 0 else (self.radius - 4) * 0.25
+            px = cx + int(r * math.cos(angle))
+            py = cy + int(r * math.sin(angle))
+            inner_points.append((px, py))
+        pygame.draw.polygon(self.image, (255, 255, 200), inner_points)
+        pygame.draw.circle(self.image, (255, 255, 255), (cx - 3, cy - 3), 2)
+
+    def update(self):
+        self.vy += self.gravity
         self.rect.y += self.vy
-        self.vy += 0.3
-        self.life -= 1
-        if self.life <= 0:
+        self.wobble += self.wobble_speed
+        self.rect.x += int(math.sin(self.wobble) * 1.5)
+        if self.rect.left < 0:
+            self.rect.left = 0
+        if self.rect.right > SCREEN_WIDTH:
+            self.rect.right = SCREEN_WIDTH
+        if self.rect.top > SCREEN_HEIGHT:
             self.kill()
 
 
@@ -219,6 +298,8 @@ class Game:
     STATE_GAMEOVER = 'gameover'
     STATE_LEVEL_COMPLETE = 'level_complete'
 
+    GOLDEN_SPAWN_INTERVAL = 480
+
     def __init__(self):
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
         pygame.display.set_caption("接水果大作战")
@@ -239,6 +320,9 @@ class Game:
                 'combo': self._create_sound(freq=1000, duration=120),
                 'level_complete': self._create_sound(freq=600, duration=300),
                 'game_over': self._create_sound(freq=200, duration=400),
+                'golden': self._create_sound(freq=1200, duration=150),
+                'bounce': self._create_sound(freq=500, duration=100),
+                'star': self._create_sound(freq=900, duration=120),
             }
             self._play_background_music()
         except Exception:
@@ -322,9 +406,12 @@ class Game:
         self.level_time = 30
         self.spawn_timer = 0
         self.spawn_interval = 45
+        self.golden_spawn_timer = 0
         self.all_sprites = pygame.sprite.Group()
         self.items = pygame.sprite.Group()
         self.particles = pygame.sprite.Group()
+        self.golden_glows = []
+        self.star_bursts = []
         self.basket = Basket()
         self.all_sprites.add(self.basket)
         self.combo = ComboDisplay()
@@ -336,6 +423,21 @@ class Game:
         self.items.add(item)
         self.all_sprites.add(item)
 
+    def _spawn_golden_apple(self):
+        ga = GoldenApple(self.level)
+        self.items.add(ga)
+        self.all_sprites.add(ga)
+        glow = ga.create_glow()
+        self.golden_glows.append(glow)
+
+    def _spawn_star_from_bomb(self, bomb_x, bomb_y):
+        star = Star(bomb_x, bomb_y)
+        self.items.add(star)
+        self.all_sprites.add(star)
+        burst = StarBurst(bomb_x, bomb_y)
+        self.star_bursts.append(burst)
+        self._play_sound('bounce')
+
     def _add_particles(self, x, y, color, count=10):
         for _ in range(count):
             p = Particle(x, y, color)
@@ -346,16 +448,42 @@ class Game:
         self.floating_texts.append({'text': text, 'x': x, 'y': y, 'color': color, 'life': 60})
 
     def _handle_collisions(self):
-        hits = pygame.sprite.spritecollide(self.basket, self.items, True, pygame.sprite.collide_rect)
+        hits = pygame.sprite.spritecollide(self.basket, self.items, False, pygame.sprite.collide_rect)
         for item in hits:
-            if item.is_bomb:
-                self.health -= 1
-                self.combo.reset()
-                self._play_sound('bomb')
-                self._add_particles(item.rect.centerx, item.rect.centery, RED, 15)
-                self._add_floating_text("-1 ♥", item.rect.centerx, item.rect.centery, RED)
-                if self.health <= 0:
-                    self._game_over()
+            if item.is_star:
+                multiplier = self.combo.get_multiplier()
+                points = int(item.points * multiplier)
+                self.score += points
+                self.combo.add_combo()
+                self._play_sound('star')
+                self._add_particles(item.rect.centerx, item.rect.centery, BRIGHT_GOLD, 12)
+                mult_text = f" x{multiplier:.1f}" if multiplier > 1 else ""
+                self._add_floating_text(f"+{points}{mult_text}",
+                                        item.rect.centerx, item.rect.centery, BRIGHT_GOLD)
+                item.kill()
+
+            elif item.is_bomb:
+                self._spawn_star_from_bomb(item.rect.centerx, item.rect.top)
+                self._add_particles(item.rect.centerx, item.rect.centery, ORANGE, 10)
+                self._add_floating_text("弹飞!", item.rect.centerx, item.rect.centery, ORANGE)
+                item.kill()
+
+            elif item.is_golden:
+                multiplier = self.combo.get_multiplier()
+                points = int(item.points * multiplier)
+                self.score += points
+                self.combo.add_combo()
+                self._play_sound('golden')
+                self._add_particles(item.rect.centerx, item.rect.centery, GOLD, 20)
+                mult_text = f" x{multiplier:.1f}" if multiplier > 1 else ""
+                self._add_floating_text(f"+{points}{mult_text}",
+                                        item.rect.centerx, item.rect.centery, GOLD)
+                if item.glow:
+                    item.glow.kill()
+                    if item.glow in self.golden_glows:
+                        self.golden_glows.remove(item.glow)
+                item.kill()
+
             else:
                 multiplier = self.combo.get_multiplier()
                 points = int(item.points * multiplier)
@@ -370,6 +498,7 @@ class Game:
                 mult_text = f" x{multiplier:.1f}" if multiplier > 1 else ""
                 self._add_floating_text(f"+{points}{mult_text}",
                                         item.rect.centerx, item.rect.centery, GREEN)
+                item.kill()
 
     def _game_over(self):
         self.state = self.STATE_GAMEOVER
@@ -389,6 +518,8 @@ class Game:
         self.level_time = 30
         self.spawn_interval = max(15, 45 - self.level * 3)
         self.items.empty()
+        self.golden_glows.clear()
+        self.star_bursts.clear()
         self.state = self.STATE_LEVEL_COMPLETE
         self._play_sound('level_complete')
 
@@ -451,7 +582,6 @@ class Game:
     def _draw_floating_texts(self):
         texts_to_remove = []
         for i, ft in enumerate(self.floating_texts):
-            alpha = min(255, ft['life'] * 4)
             draw_text(self.screen, ft['text'], 24, ft['x'], ft['y'], ft['color'], center=True)
             ft['y'] -= 2
             ft['life'] -= 1
@@ -460,27 +590,42 @@ class Game:
         for i in reversed(texts_to_remove):
             self.floating_texts.pop(i)
 
+    def _draw_effects(self):
+        for glow in self.golden_glows[:]:
+            if glow.alive():
+                glow.update()
+                glow.draw(self.screen)
+            else:
+                self.golden_glows.remove(glow)
+        for burst in self.star_bursts[:]:
+            if burst.alive():
+                burst.update()
+                burst.draw(self.screen)
+            else:
+                self.star_bursts.remove(burst)
+
     def _draw_menu(self):
         self._draw_background()
-        title_y = 150
+        title_y = 130
         draw_text(self.screen, "🍎 接水果大作战 🍇", 56,
                   SCREEN_WIDTH // 2, title_y, ORANGE, center=True)
         draw_text(self.screen, "Fruit Catcher", 28,
                   SCREEN_WIDTH // 2, title_y + 60, YELLOW, center=True)
         draw_text(self.screen, f"最高分: {self.high_score}", 28,
-                  SCREEN_WIDTH // 2, title_y + 110, GREEN, center=True)
+                  SCREEN_WIDTH // 2, title_y + 100, GREEN, center=True)
         instructions = [
             "← → 方向键移动篮子",
-            "接住水果得分，接到炸弹扣血",
-            "连续接住水果获得 Combo 加分",
+            "接水果得分，碰炸弹弹飞变星星⭐",
+            "金色苹果🌟直接+50分!",
+            "连续接住获得 Combo 加分",
             "共 10 关，每关 30 秒，3 条命",
         ]
         for i, line in enumerate(instructions):
-            draw_text(self.screen, line, 22,
-                      SCREEN_WIDTH // 2, title_y + 170 + i * 32, WHITE, center=True)
+            draw_text(self.screen, line, 20,
+                      SCREEN_WIDTH // 2, title_y + 150 + i * 30, WHITE, center=True)
         button_w, button_h = 200, 60
         button_x = SCREEN_WIDTH // 2 - button_w // 2
-        draw_button(self.screen, "开始游戏", button_x, 450, button_w, button_h,
+        draw_button(self.screen, "开始游戏", button_x, 460, button_w, button_h,
                     GREEN, (80, 230, 80), self._start_game)
         draw_button(self.screen, f"音乐: {'开' if self.music_on else '关'}",
                     button_x, 530, button_w, button_h, BLUE, (100, 150, 255), self._toggle_music)
@@ -488,6 +633,7 @@ class Game:
     def _draw_pause(self):
         self._draw_background()
         self.all_sprites.draw(self.screen)
+        self._draw_effects()
         self._draw_hud()
         overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 150))
@@ -553,6 +699,8 @@ class Game:
         self.state = state
         if state == self.STATE_MENU:
             self.items.empty()
+            self.golden_glows.clear()
+            self.star_bursts.clear()
             if hasattr(self, 'music_channel'):
                 self.music_channel.stop()
             self._play_background_music()
@@ -596,6 +744,10 @@ class Game:
                     self._spawn_item()
                     if random.random() < 0.3 and self.level > 3:
                         self._spawn_item()
+                self.golden_spawn_timer += 1
+                if self.golden_spawn_timer >= self.GOLDEN_SPAWN_INTERVAL:
+                    self.golden_spawn_timer = 0
+                    self._spawn_golden_apple()
                 self._handle_collisions()
                 self._update_level_time()
 
@@ -604,6 +756,7 @@ class Game:
             elif self.state == self.STATE_PLAYING or self.state == self.STATE_PAUSED:
                 self._draw_background()
                 self.all_sprites.draw(self.screen)
+                self._draw_effects()
                 self._draw_hud()
                 self.combo.draw(self.screen)
                 self._draw_floating_texts()
